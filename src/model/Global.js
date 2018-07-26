@@ -161,6 +161,12 @@ var GlobalModel = Model.extend({
             }
         });
 
+        if (newOption.hasOwnProperty("series")) {
+            option.series = newOption.series;
+            this.option.series = newOption.series;
+            componentsMap.set("series", componentsMap.get("series").slice(0, option.series.length));
+        }
+
         ComponentModel.topologicalTravel(
             newCptTypes, ComponentModel.getAllClassMainTypes(), visitComponent, this
         );
