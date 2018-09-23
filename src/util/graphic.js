@@ -72,12 +72,10 @@ export function extendPath(pathData, opts) {
  */
 export function makePath(pathData, opts, rect, layout) {
     var path = pathTool.createFromString(pathData, opts);
-    var boundingRect = path.getBoundingRect();
     if (rect) {
         if (layout === 'center') {
-            rect = centerGraphic(rect, boundingRect);
+            rect = centerGraphic(rect, path.getBoundingRect());
         }
-
         resizePath(path, rect);
     }
     return path;
@@ -238,211 +236,286 @@ export function subPixelOptimize(position, lineWidth, positiveOrNegative) {
 }
 
 function hasFillOrStroke(fillOrStroke) {
-    return fillOrStroke != null && fillOrStroke != 'none';
+    return fillOrStroke != null && fillOrStroke !== 'none';
 }
+
+// Most lifted color are duplicated.
+var liftedColorMap = zrUtil.createHashMap();
+var liftedColorCount = 0;
 
 function liftColor(color) {
-    return typeof color === 'string' ? colorTool.lift(color, -0.1) : color;
-}
-
-/**
- * @private
- */
-function cacheElementStl(el) {
-    if (el.__hoverStlDirty) {
-        var stroke = el.style.stroke;
-        var fill = el.style.fill;
-
-        // Create hoverStyle on mouseover
-        var hoverStyle = el.__hoverStl;
-        hoverStyle.fill = hoverStyle.fill
-            || (hasFillOrStroke(fill) ? liftColor(fill) : null);
-        hoverStyle.stroke = hoverStyle.stroke
-            || (hasFillOrStroke(stroke) ? liftColor(stroke) : null);
-
-        var normalStyle = {};
-        for (var name in hoverStyle) {
-            // See comment in `doSingleEnterHover`.
-            if (hoverStyle[name] != null) {
-                normalStyle[name] = el.style[name];
-            }
-        }
-
-        el.__normalStl = normalStyle;
-
-        el.__hoverStlDirty = false;
+    if (typeof color !== 'string') {
+        return color;
     }
+    var liftedColor = liftedColorMap.get(color);
+    if (!liftedColor) {
+        liftedColor = colorTool.lift(color, -0.1);
+        if (liftedColorCount < 10000) {
+            liftedColorMap.set(color, liftedColor);
+            liftedColorCount++;
+        }
+    }
+    return liftedColor;
 }
 
-/**
- * @private
- */
-function doSingleEnterHover(el) {
-    if (el.__isHover) {
+function cacheElementStl(el) {
+    if (!el.__hoverStlDirty) {
+        return;
+    }
+    el.__hoverStlDirty = false;
+
+    var hoverStyle = el.__hoverStl;
+    if (!hoverStyle) {
+        el.__normalStl = null;
         return;
     }
 
-    cacheElementStl(el);
+    var normalStyle = el.__normalStl = {};
+    var elStyle = el.style;
 
-    if (el.useHoverLayer) {
-        el.__zr && el.__zr.addHover(el, el.__hoverStl);
-    }
-    else {
-        var style = el.style;
-        var insideRollbackOpt = style.insideRollbackOpt;
-
-        // Consider case: only `position: 'top'` is set on emphasis, then text
-        // color should be returned to `autoColor`, rather than remain '#fff'.
-        // So we should rollback then apply again after style merging.
-        insideRollbackOpt && rollbackInsideStyle(style);
-
-        // styles can be:
-        // {
-        //    label: {
-        //        show: false,
-        //        position: 'outside',
-        //        fontSize: 18
-        //    },
-        //    emphasis: {
-        //        label: {
-        //            show: true
-        //        }
-        //    }
-        // },
-        // where properties of `emphasis` may not appear in `normal`. We previously use
-        // module:echarts/util/model#defaultEmphasis to merge `normal` to `emphasis`.
-        // But consider rich text and setOption in merge mode, it is impossible to cover
-        // all properties in merge. So we use merge mode when setting style here, where
-        // only properties that is not `null/undefined` can be set. The disadventage:
-        // null/undefined can not be used to remove style any more in `emphasis`.
-        style.extendFrom(el.__hoverStl);
-
-        // Do not save `insideRollback`.
-        if (insideRollbackOpt) {
-            applyInsideStyle(style, style.insideOriginalTextPosition, insideRollbackOpt);
-
-            // textFill may be rollbacked to null.
-            if (style.textFill == null) {
-                style.textFill = insideRollbackOpt.autoColor;
-            }
+    for (var name in hoverStyle) {
+        // See comment in `singleEnterEmphasis`.
+        if (hoverStyle[name] != null) {
+            normalStyle[name] = elStyle[name];
         }
+    }
 
+    // Always cache fill and stroke to normalStyle for lifting color.
+    normalStyle.fill = elStyle.fill;
+    normalStyle.stroke = elStyle.stroke;
+}
+
+function singleEnterEmphasis(el) {
+    var hoverStl = el.__hoverStl;
+
+    if (!hoverStl || el.__highlighted) {
+        return;
+    }
+
+    var useHoverLayer = el.useHoverLayer;
+    el.__highlighted = useHoverLayer ? 'layer' : 'plain';
+
+    var zr = el.__zr;
+    if (!zr && useHoverLayer) {
+        return;
+    }
+
+    var elTarget = el;
+    var targetStyle = el.style;
+
+    if (useHoverLayer) {
+        elTarget = zr.addHover(el);
+        targetStyle = elTarget.style;
+    }
+
+    // Consider case: only `position: 'top'` is set on emphasis, then text
+    // color should be returned to `autoColor`, rather than remain '#fff'.
+    // So we should rollback then apply again after style merging.
+    rollbackDefaultTextStyle(targetStyle);
+
+    if (!useHoverLayer) {
+        cacheElementStl(elTarget);
+    }
+
+    // styles can be:
+    // {
+    //    label: {
+    //        show: false,
+    //        position: 'outside',
+    //        fontSize: 18
+    //    },
+    //    emphasis: {
+    //        label: {
+    //            show: true
+    //        }
+    //    }
+    // },
+    // where properties of `emphasis` may not appear in `normal`. We previously use
+    // module:echarts/util/model#defaultEmphasis to merge `normal` to `emphasis`.
+    // But consider rich text and setOption in merge mode, it is impossible to cover
+    // all properties in merge. So we use merge mode when setting style here, where
+    // only properties that is not `null/undefined` can be set. The disadventage:
+    // null/undefined can not be used to remove style any more in `emphasis`.
+    targetStyle.extendFrom(hoverStl);
+
+    setDefaultHoverFillStroke(targetStyle, hoverStl, 'fill');
+    setDefaultHoverFillStroke(targetStyle, hoverStl, 'stroke');
+
+    applyDefaultTextStyle(targetStyle);
+
+    if (!useHoverLayer) {
         el.dirty(false);
         el.z2 += 1;
     }
 
-    el.__isHover = true;
+    el.__extraOnEmphasis && el.__extraOnEmphasis();
 }
 
-/**
- * @inner
- */
-function doSingleLeaveHover(el) {
-    if (!el.__isHover) {
-        return;
+function setDefaultHoverFillStroke(targetStyle, hoverStyle, prop) {
+    if (!hasFillOrStroke(hoverStyle[prop]) && hasFillOrStroke(targetStyle[prop])) {
+        targetStyle[prop] = liftColor(targetStyle[prop]);
     }
+}
 
-    var normalStl = el.__normalStl;
-    if (el.useHoverLayer) {
+function singleEnterNormal(el) {
+    if (el.__highlighted) {
+        doSingleRestoreHoverStyle(el);
+
+        el.__extraOnNormal && el.__extraOnNormal();
+
+        el.__highlighted = false;
+    }
+}
+
+function doSingleRestoreHoverStyle(el) {
+    var highlighted = el.__highlighted;
+
+    if (highlighted === 'layer') {
         el.__zr && el.__zr.removeHover(el);
     }
-    else {
-        // Consider null/undefined value, should use
-        // `setStyle` but not `extendFrom(stl, true)`.
-        normalStl && el.setStyle(normalStl);
-        el.z2 -= 1;
+    else if (highlighted) {
+        var style = el.style;
+        var normalStl = el.__normalStl;
+
+        if (normalStl) {
+            rollbackDefaultTextStyle(style);
+
+            // Consider null/undefined value, should use
+            // `setStyle` but not `extendFrom(stl, true)`.
+            el.setStyle(normalStl);
+
+            applyDefaultTextStyle(style);
+
+            el.z2 -= 1;
+        }
     }
+}
 
-    el.__isHover = false;
+function traverseCall(el, method) {
+    el.isGroup
+        ? el.traverse(function (child) {
+            !child.isGroup && method(child);
+        })
+        : method(el);
 }
 
 /**
- * @inner
+ * Set hover style of element.
+ *
+ * @param {module:zrender/Element} el Should not be `zrender/container/Group`.
+ * @param {Object|boolean} [hoverStl] The specified hover style.
+ *        If set as `false`, disable the hover style.
+ *        Similarly, The `el.hoverStyle` can alse be set
+ *        as `false` to disable the hover style.
+ *        Otherwise, use the default hover style if not provided.
+ * @param {Object} [opt]
+ * @param {boolean} [opt.hoverSilentOnTouch=false] See `graphic.setAsHighDownDispatcher`
  */
-function doEnterHover(el) {
-    el.type === 'group'
-        ? el.traverse(function (child) {
-            if (child.type !== 'group') {
-                doSingleEnterHover(child);
-            }
-        })
-        : doSingleEnterHover(el);
-}
-
-function doLeaveHover(el) {
-    el.type === 'group'
-        ? el.traverse(function (child) {
-            if (child.type !== 'group') {
-                doSingleLeaveHover(child);
-            }
-        })
-        : doSingleLeaveHover(el);
-}
-
-/**
- * @inner
- */
-function setElementHoverStl(el, hoverStl) {
-    // If element has sepcified hoverStyle, then use it instead of given hoverStyle
-    // Often used when item group has a label element and it's hoverStyle is different
-    el.__hoverStl = el.hoverStyle || hoverStl || {};
+export function setElementHoverStyle(el, hoverStl) {
+    hoverStl = el.__hoverStl = hoverStl !== false && (hoverStl || {});
     el.__hoverStlDirty = true;
 
-    if (el.__isHover) {
-        cacheElementStl(el);
+    if (el.__highlighted) {
+        singleEnterNormal(el);
+        singleEnterEmphasis(el);
     }
 }
 
 /**
- * @inner
+ * Set customized emphasis effect like scale, animation.
+ * If calling this method more than once with the same
+ * `onEmphasis` and `onNormal` function, it will not
+ * add but do nothing.
+ *
+ * Highlight that triggered by API (
+ *     `chart.dispatchAction({type: 'highlight'});`
+ *     or `el.trigger('emphasis');`
+ * ) has higher priority than that triggered by `mouseover`.
+ * When element has been called to be entered emphasis, mouse over
+ * should not trigger the highlight effect (for example, animation
+ * scale) again, and `mouseout` should not downplay the highlight
+ * effect. So the listener of `mouseover` and `mouseout` should
+ * check `isInEmphasis`.
+ *
+ * @param {module:zrender/src/Element} el element that will take the effect.
+ * @param {Function} onEmphasis
+ * @param {Function} onNormal
  */
+export function setExtraHighDownEffect(el, onEmphasis, onNormal) {
+    el.__extraOnEmphasis = onEmphasis;
+    el.__extraOnNormal = onNormal;
+}
+
+/**
+ * @param {module:zrender/src/Element} el element that will take the effect.
+ */
+export function removeExtraHighDownEffect(el) {
+    el.__extraOnEmphasis = el.__extraOnNormal = null;
+}
+
 function onElementMouseOver(e) {
     if (this.__hoverSilentOnTouch && e.zrByTouch) {
         return;
     }
 
-    // Only if element is not in emphasis status
-    !this.__isEmphasis && doEnterHover(this);
+    // API highlight has higher priority than mouse highlight.
+    !this.__doesEmphasisEnteredByAPI && traverseCall(this, singleEnterEmphasis);
 }
 
-/**
- * @inner
- */
 function onElementMouseOut(e) {
     if (this.__hoverSilentOnTouch && e.zrByTouch) {
         return;
     }
 
-    // Only if element is not in emphasis status
-    !this.__isEmphasis && doLeaveHover(this);
+    // API highlight has higher priority than mouse highlight.
+    !this.__doesEmphasisEnteredByAPI && traverseCall(this, singleEnterNormal);
 }
 
-/**
- * @inner
- */
-function enterEmphasis() {
-    this.__isEmphasis = true;
-    doEnterHover(this);
+function onEnterEmphasisByAPI() {
+    this.__doesEmphasisEnteredByAPI = true;
+    traverseCall(this, singleEnterEmphasis);
 }
 
-/**
- * @inner
- */
-function leaveEmphasis() {
-    this.__isEmphasis = false;
-    doLeaveHover(this);
+function onEnterNormalByAPI() {
+    this.__doesEmphasisEnteredByAPI = false;
+    traverseCall(this, singleEnterNormal);
 }
 
 /**
  * Set hover style of element.
- * This method can be called repeatly without side-effects.
+ *
+ * [Caveat]:
+ * This method can be called repeatly and achieve the same result.
+ *
+ * [Usage]:
+ * Call the method for a "root" element once. Do not call it for each descendants.
+ * If the descendants elemenets of a group has itself hover style different from the
+ * root group, we can simply mount the style on `el.hoverStyle` for them, but should
+ * not call this method for them.
+ *
  * @param {module:zrender/Element} el
- * @param {Object} [hoverStyle]
+ * @param {Object|boolean} [hoverStyle] See `graphic.setElementHoverStyle`.
  * @param {Object} [opt]
+ * @param {boolean} [opt.hoverSilentOnTouch=false] See `graphic.setAsHighDownDispatcher`.
+ */
+export function setHoverStyle(el, hoverStyle, opt) {
+    el.isGroup
+        ? el.traverse(function (child) {
+            // If element has sepcified hoverStyle, then use it instead of given hoverStyle
+            // Often used when item group has a label element and it's hoverStyle is different
+            !child.isGroup && setElementHoverStyle(child, child.hoverStyle || hoverStyle);
+        })
+        : setElementHoverStyle(el, el.hoverStyle || hoverStyle);
+
+    setAsHighDownDispatcher(el, opt);
+}
+
+/**
+ * @param {Object|boolean} [opt] If `false`, means disable trigger.
  * @param {boolean} [opt.hoverSilentOnTouch=false]
  *        In touch device, mouseover event will be trigger on touchstart event
  *        (see module:zrender/dom/HandlerProxy). By this mechanism, we can
- *        conviniently use hoverStyle when tap on touch screen without additional
+ *        conveniently use hoverStyle when tap on touch screen without additional
  *        code for compatibility.
  *        But if the chart/component has select feature, which usually also use
  *        hoverStyle, there might be conflict between 'select-highlight' and
@@ -450,24 +523,30 @@ function leaveEmphasis() {
  *        In this case, hoverSilentOnTouch should be used to disable hover-highlight
  *        on touch device.
  */
-export function setHoverStyle(el, hoverStyle, opt) {
-    el.__hoverSilentOnTouch = opt && opt.hoverSilentOnTouch;
+export function setAsHighDownDispatcher(el, opt) {
+    var disable = opt === false;
+    el.__hoverSilentOnTouch = opt != null && opt.hoverSilentOnTouch;
 
-    el.type === 'group'
-        ? el.traverse(function (child) {
-            if (child.type !== 'group') {
-                setElementHoverStl(child, hoverStyle);
-            }
-        })
-        : setElementHoverStl(el, hoverStyle);
+    // Simple optimize, since this method might be
+    // called for each elements of a group in some cases.
+    if (!disable || el.__highDownDispatcher) {
+        var method = disable ? 'off' : 'on';
 
-    // Duplicated function will be auto-ignored, see Eventful.js.
-    el.on('mouseover', onElementMouseOver)
-        .on('mouseout', onElementMouseOut);
+        // Duplicated function will be auto-ignored, see Eventful.js.
+        el[method]('mouseover', onElementMouseOver)[method]('mouseout', onElementMouseOut);
+        // Emphasis, normal can be triggered manually
+        el[method]('emphasis', onEnterEmphasisByAPI)[method]('normal', onEnterNormalByAPI);
 
-    // Emphasis, normal can be triggered manually
-    el.on('emphasis', enterEmphasis)
-        .on('normal', leaveEmphasis);
+        el.__highDownDispatcher = !disable;
+    }
+}
+
+/**
+ * @param {module:zrender/src/Element} el
+ * @return {boolean}
+ */
+export function isHighDownDispatcher(el) {
+    return !!(el && el.__highDownDispatcher);
 }
 
 /**
@@ -554,7 +633,7 @@ export function setTextStyle(
 ) {
     setTextStyleCommon(textStyle, textStyleModel, opt, isEmphasis);
     specifiedTextStyle && zrUtil.extend(textStyle, specifiedTextStyle);
-    textStyle.host && textStyle.host.dirty && textStyle.host.dirty(false);
+    // textStyle.host && textStyle.host.dirty && textStyle.host.dirty(false);
 
     return textStyle;
 }
@@ -579,7 +658,7 @@ export function setText(textStyle, labelModel, defaultColor) {
         opt.autoColor = defaultColor;
     }
     setTextStyleCommon(textStyle, labelModel, opt, isEmphasis);
-    textStyle.host && textStyle.host.dirty && textStyle.host.dirty(false);
+    // textStyle.host && textStyle.host.dirty && textStyle.host.dirty(false);
 }
 
 /**
@@ -704,15 +783,14 @@ function setTokenTextStyle(textStyle, textStyleModel, globalTextStyle, opt, isEm
         globalTextStyle.textBorderWidth
     );
 
+    // Save original textPosition, because style.textPosition will be repalced by
+    // real location (like [10, 30]) in zrender.
+    textStyle.insideRawTextPosition = textStyle.textPosition;
+
     if (!isEmphasis) {
         if (isBlock) {
-            // Always set `insideRollback`, for clearing previous.
-            var originalTextPosition = textStyle.textPosition;
-            textStyle.insideRollback = applyInsideStyle(textStyle, originalTextPosition, opt);
-            // Save original textPosition, because style.textPosition will be repalced by
-            // real location (like [10, 30]) in zrender.
-            textStyle.insideOriginalTextPosition = originalTextPosition;
             textStyle.insideRollbackOpt = opt;
+            applyDefaultTextStyle(textStyle);
         }
 
         // Set default finally.
@@ -765,12 +843,25 @@ function getAutoColor(color, opt) {
     return color !== 'auto' ? color : (opt && opt.autoColor) ? opt.autoColor : null;
 }
 
-function applyInsideStyle(textStyle, textPosition, opt) {
-    var useInsideStyle = opt.useInsideStyle;
-    var insideRollback;
+// When text position is `inside` and `textFill` not specified, we
+// provide a mechanism to auto make text border for better view. But
+// text position changing when hovering or being emphasis should be
+// considered, where the `insideRollback` enables to restore the style.
+function applyDefaultTextStyle(textStyle) {
+    var opt = textStyle.insideRollbackOpt;
 
-    if (textStyle.textFill == null
-        && useInsideStyle !== false
+    // Only insideRollbackOpt create (setTextStyleCommon used),
+    // applyDefaultTextStyle works.
+    if (!opt || textStyle.textFill != null) {
+        return;
+    }
+
+    var useInsideStyle = opt.useInsideStyle;
+    var textPosition = textStyle.insideRawTextPosition;
+    var insideRollback;
+    var autoColor = opt.autoColor;
+
+    if (useInsideStyle !== false
         && (useInsideStyle === true
             || (opt.isRectText
                 && textPosition
@@ -788,20 +879,28 @@ function applyInsideStyle(textStyle, textPosition, opt) {
         textStyle.textFill = '#fff';
         // Consider text with #fff overflow its container.
         if (textStyle.textStroke == null) {
-            textStyle.textStroke = opt.autoColor;
+            textStyle.textStroke = autoColor;
             textStyle.textStrokeWidth == null && (textStyle.textStrokeWidth = 2);
         }
     }
+    else if (autoColor != null) {
+        insideRollback = {textFill: null};
+        textStyle.textFill = autoColor;
+    }
 
-    return insideRollback;
+    // Always set `insideRollback`, for clearing previous.
+    if (insideRollback) {
+        textStyle.insideRollback = insideRollback;
+    }
 }
 
-function rollbackInsideStyle(style) {
+function rollbackDefaultTextStyle(style) {
     var insideRollback = style.insideRollback;
     if (insideRollback) {
         style.textFill = insideRollback.textFill;
         style.textStroke = insideRollback.textStroke;
         style.textStrokeWidth = insideRollback.textStrokeWidth;
+        style.insideRollback = null;
     }
 }
 
@@ -1016,6 +1115,8 @@ export function groupTransition(g1, g2, animatableModel, cb) {
  * @return {Array.<Array.<number>>} A new clipped points.
  */
 export function clipPointsByRect(points, rect) {
+    // FIXME: this way migth be incorrect when grpahic clipped by a corner.
+    // and when element have border.
     return zrUtil.map(points, function (point) {
         var x = point[0];
         x = mathMax(x, rect.x);
@@ -1038,6 +1139,8 @@ export function clipRectByRect(targetRect, rect) {
     var y = mathMax(targetRect.y, rect.y);
     var y2 = mathMin(targetRect.y + targetRect.height, rect.y + rect.height);
 
+    // If the total rect is cliped, nothing, including the border,
+    // should be painted. So return undefined.
     if (x2 >= x && y2 >= y) {
         return {
             x: x,

@@ -17,6 +17,12 @@
 * under the License.
 */
 
+/*
+* The `scaleLevels` references to d3.js. The use of the source
+* code of this file is also subject to the terms and consitions
+* of its license (BSD-3Clause, see <echarts/src/licenses/LICENSE-d3>).
+*/
+
 // [About UTC and local time zone]:
 // In most cases, `number.parseDate` will treat input data string as local time
 // (except time zone is specified in time string). And `format.formateTime` returns
@@ -50,7 +56,7 @@ var bisect = function (a, x, lo, hi) {
             lo = mid + 1;
         }
         else {
-            hi  = mid;
+            hi = mid;
         }
     }
     return lo;
@@ -165,7 +171,7 @@ zrUtil.each(['contain', 'normalize'], function (methodName) {
     };
 });
 
-// Steps from d3
+// Steps from d3, see the license statement at the top of this file.
 var scaleLevels = [
     // Format              interval
     ['hh:mm:ss', ONE_SECOND],          // 1s
@@ -195,8 +201,8 @@ var scaleLevels = [
     ['month', ONE_DAY * 31],           // 1M
     ['week', ONE_DAY * 42],            // 6w
     ['month', ONE_DAY * 62],           // 2M
-    ['week', ONE_DAY * 42],            // 10w
-    ['quarter', ONE_DAY * 380 / 4],    // 3M
+    ['week', ONE_DAY * 70],            // 10w
+    ['quarter', ONE_DAY * 95],         // 3M
     ['month', ONE_DAY * 31 * 4],       // 4M
     ['month', ONE_DAY * 31 * 5],       // 5M
     ['half-year', ONE_DAY * 380 / 2],  // 6M

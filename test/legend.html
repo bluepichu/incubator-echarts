@@ -1,3 +1,23 @@
+
+<!--
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+
 <html>
     <head>
         <meta charset="utf-8">
@@ -49,8 +69,10 @@
 
         <div id="legendHoverLink"></div>
 
+        <div id="multi-pie"></div>
 
         <script>
+
             function makeSeries(seriesCount, categoryCount) {
                 var series = [];
                 var legendData = [];
@@ -792,17 +814,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
         <script>
 
             var chart;
@@ -855,7 +866,7 @@
                     ]
                 }
 
-                chart = myChart = testHelper.create(echarts, legendHoverLink, {
+                chart = myChart = testHelper.create(echarts, 'legendHoverLink', {
                     title: 'legendHoverLink is disabled on pie',
                     option: option
                 });
@@ -863,5 +874,63 @@
 
         </script>
 
+
+
+
+
+
+
+
+
+
+        <script>
+
+            var chart;
+            var myChart;
+            var option;
+
+            require([
+                'echarts'/*, 'map/js/china' */
+            ], function (echarts) {
+
+                var option = {
+                    tooltip: {
+                    },
+                    legend: {
+                        data: ['a', 'b', 'c']
+                    },
+                    series: [
+                        {
+                            name: 'AAA',
+                            type: 'pie',
+                            center: ['75%', '50%'],
+                            radius: '30%',
+                            data: [
+                                {name: 'a', value: 12},
+                                {name: 'b', value: 34},
+                                {name: 'c', value: 56}
+                            ]
+                        },
+                        {
+                            name: 'BBB',
+                            type: 'pie',
+                            center: ['25%', '50%'],
+                            radius: '30%',
+                            data: [
+                                {name: 'a', value: 12},
+                                {name: 'b', value: 34},
+                                {name: 'c', value: 56}
+                            ]
+                        }
+                    ]
+                }
+
+                chart = myChart = testHelper.create(echarts, 'multi-pie', {
+                    title: 'Hover legend, the segments of BOTH pie should be hightlighted',
+                    option: option
+                });
+            });
+
+        </script>
     </body>
 </html>
