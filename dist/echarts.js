@@ -23178,6 +23178,7 @@ var dataFormatMixin = {
                 color: color,
                 renderMode: renderMode
             }),
+            tickInterval: isSeries ? this.coordinateSystem.getBaseAxis().scale._interval : null,
 
             // Param name list for mapping `a`, `b`, `c`, `d`, `e`
             $vars: ['seriesName', 'name', 'value']
