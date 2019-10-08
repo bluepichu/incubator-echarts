@@ -32867,12 +32867,12 @@ function makeColumnLayout(barSeries) {
                 var base2 = data.get(baseDim, idx + 1);
                 var x1, x2;
 
-                if (valueAxis.isHorizontal()) {
-                    [_, x1] = cartesian.dataToPoint([0, base1]);
-                    [_, x2] = cartesian.dataToPoint([0, base2]);
-                } else {
+                if (baseAxis.isHorizontal()) {
                     [x1, _] = cartesian.dataToPoint([base1, 0]);
                     [x2, _] = cartesian.dataToPoint([base2, 0]);
+                } else {
+                    [_, x1] = cartesian.dataToPoint([0, base1]);
+                    [_, x2] = cartesian.dataToPoint([0, base2]);
                 }
 
                 bandWidth = Math.min(bandWidth, Math.abs(x2 - x1));
