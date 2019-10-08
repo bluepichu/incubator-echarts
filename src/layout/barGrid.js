@@ -94,6 +94,32 @@ export function makeColumnLayout(barSeries) {
         var cartesian = seriesModel.coordinateSystem;
         var baseAxis = cartesian.getBaseAxis();
         var axisExtent = baseAxis.getExtent();
+
+        var bandWidth;
+
+        if (baseAxis.type === "category") {
+            bandWidth = baseAxis.getBandWidth();
+        } else {
+            bandWidth = Math.abs(axisExtent[1] - axisExtent[0]) / data.count();
+            var baseDim = data.mapDimension(baseAxis.dim);
+
+            for (var idx = 0, len = data.count(); idx < len - 1; idx++) {
+                var base1 = data.get(baseDim, idx);
+                var base2 = data.get(baseDim, idx + 1);
+                var x1, x2;
+
+                if (valueAxis.isHorizontal()) {
+                    [_, x1] = cartesian.dataToPoint([0, base1]);
+                    [_, x2] = cartesian.dataToPoint([0, base2]);
+                } else {
+                    [x1, _] = cartesian.dataToPoint([base1, 0]);
+                    [x2, _] = cartesian.dataToPoint([base2, 0]);
+                }
+
+                bandWidth = Math.min(bandWidth, Math.abs(x2 - x1));
+            }
+        }
+
         var bandWidth = baseAxis.type === 'category'
             ? baseAxis.getBandWidth()
             : (Math.abs(axisExtent[1] - axisExtent[0]) / data.count());
