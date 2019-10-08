@@ -32879,10 +32879,6 @@ function makeColumnLayout(barSeries) {
             }
         }
 
-        var bandWidth = baseAxis.type === 'category'
-            ? baseAxis.getBandWidth()
-            : (Math.abs(axisExtent[1] - axisExtent[0]) / data.count());
-
         var barWidth = parsePercent$1(
             seriesModel.get('barWidth'), bandWidth
         );
