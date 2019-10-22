@@ -63,7 +63,7 @@ export default {
                 renderMode: renderMode
             }),
             tickInterval:
-                isSeries && this.coordinateSystem === "cartesian2d"
+                isSeries && this.coordinateSystem.type === "cartesian2d"
                     ? this.coordinateSystem.getBaseAxis().scale._interval
                     : null,
 
